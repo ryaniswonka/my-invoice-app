@@ -1,0 +1,8 @@
+# netlify.toml
+
+[build]
+  command = "npm run build"
+  publish = "build" # Or "dist" if you changed your build output directory
+
+[functions]
+  directory = "netlify/functions" # This tells Netlify where to find your serverless functions

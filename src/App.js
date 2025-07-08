@@ -122,8 +122,8 @@ const App = () => {
     setLineItems((prevItems) => prevItems.filter((item) => item.id !== id));
   };
 
-  // Function to lookup CDTFA tax rate (updated to guide manual input)
-  const handleLookupTaxRate = () => {
+  // UPDATED: Function to lookup CDTFA tax rate using Netlify Function
+  const handleLookupTaxRate = async () => {
     const { deliveryStreet, deliveryCity, deliveryZip } = invoiceDetails;
 
     if (!deliveryStreet || !deliveryCity || !deliveryZip) {
@@ -131,11 +131,36 @@ const App = () => {
       return;
     }
 
-    const cdtfaLookupUrl = `https://www.cdtfa.ca.gov/taxes-and-fees/tax-rates.htm`;
-    setInvoiceDetails((prev) => ({
-      ...prev,
-      lookupMessage: `Please manually look up the tax rate for "${deliveryStreet}, ${deliveryCity}, ${deliveryZip}" on the CDTFA website. You can visit: ${cdtfaLookupUrl}`,
-    }));
+    setInvoiceDetails((prev) => ({ ...prev, lookupMessage: 'Looking up tax rate...' }));
+
+    try {
+      // Call your Netlify Function endpoint
+      const functionUrl = `/.netlify/functions/getTaxRate?address=${encodeURIComponent(deliveryStreet)}&city=${encodeURIComponent(deliveryCity)}&zip=${encodeURIComponent(deliveryZip)}`;
+
+      const response = await fetch(functionUrl);
+      const data = await response.json();
+
+      if (response.ok && data.taxRate) {
+        setInvoiceDetails((prev) => ({
+          ...prev,
+          cdtfaTaxRate: data.taxRate, // Directly use the rate from the function
+          lookupMessage: `Tax rate found: ${data.taxRate}%`,
+        }));
+      } else {
+        setInvoiceDetails((prev) => ({
+          ...prev,
+          cdtfaTaxRate: '', // Clear previous rate
+          lookupMessage: data.message || 'Could not find tax rate for the provided address. Please check the address or enter manually.',
+        }));
+      }
+    } catch (error) {
+      console.error('Error calling Netlify Function:', error);
+      setInvoiceDetails((prev) => ({
+        ...prev,
+        cdtfaTaxRate: '', // Clear previous rate
+        lookupMessage: 'Error fetching tax rate. Please try again later or enter manually.',
+      }));
+    }
   };
 
   // Function to export current data to CSV (results)

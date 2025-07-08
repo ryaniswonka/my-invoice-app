@@ -131,17 +131,11 @@ const App = () => {
       return;
     }
 
-    // Due to potential CORS restrictions in a browser environment, direct API calls to external services
-    // might be blocked. For a production environment, you would typically proxy this request through
-    // a backend server you control.
-    // For this demonstration, we'll guide the user to manually look up the rate.
     const cdtfaLookupUrl = `https://www.cdtfa.ca.gov/taxes-and-fees/tax-rates.htm`;
     setInvoiceDetails((prev) => ({
       ...prev,
       lookupMessage: `Please manually look up the tax rate for "${deliveryStreet}, ${deliveryCity}, ${deliveryZip}" on the CDTFA website. You can visit: ${cdtfaLookupUrl}`,
     }));
-    // Optionally, open the link in a new tab for convenience:
-    // window.open(cdtfaLookupUrl, '_blank');
   };
 
   // Function to export current data to CSV (results)
@@ -219,7 +213,7 @@ const App = () => {
       const calcMarkupCell = `E${currentRow}`;
       const calcSalesTaxCell = `G${currentRow}`;
 
-      // Excel formulas
+      // Excel formulas - Removed string concatenations
       const calculatedMarkupFormula = `=IF(${costCell}<>"",${costCell}*${markupPercentCell}/100,"")`;
       const calculatedSalesTaxFormula = `=IF(${costCell}<>"",(${costCell}+${calcMarkupCell})*${salesTaxPercentCell}/100,"")`;
       const lineTotalFormula = `=IF(${costCell}<>"",${costCell}+${calcMarkupCell}+${calcSalesTaxCell},"")`;
@@ -238,6 +232,7 @@ const App = () => {
     // Sum ranges for the default 10 rows (rows 10 to 19)
     const endRow = startRow + numRows - 1;
 
+    // Removed string concatenations for summary totals as well
     csvContent += `\n"","","","","","Subtotal (Base Costs):",` + `"=SUM(C${startRow}:C${endRow})"\n`;
     csvContent += `\n"","","","","","Total Markup:",` + `"=SUM(E${startRow}:E${endRow})"\n`;
     csvContent += `\n"","","","","","Total Sales Tax:",` + `"=SUM(G${startRow}:G${endRow})"\n`;

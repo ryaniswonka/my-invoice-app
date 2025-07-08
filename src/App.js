@@ -12,6 +12,8 @@ const App = () => {
     deliveryZip: '',
     cdtfaTaxRate: '', // New field for CDTFA tax rate (manual entry or lookup)
     lookupMessage: '', // For displaying lookup status/errors
+    applyMarkupToAll: false, // New state for applying markup globally
+    globalMarkupPercentage: 0, // New state for global markup percentage
   });
 
   // State for line items
@@ -28,27 +30,20 @@ const App = () => {
     },
   ]);
 
-  // State for summary totals
-  const [totals, setTotals] = useState({
-    subtotal: 0,
-    totalMarkup: 0,
-    totalSalesTax: 0,
-    grandTotal: 0,
-  });
-
   // Function to handle changes in general invoice details
   const handleInvoiceDetailsChange = (e) => {
-    const { name, value } = e.target;
+    const { name, type, checked, value } = e.target;
     setInvoiceDetails((prevDetails) => ({
       ...prevDetails,
-      [name]: value,
+      [name]: type === 'checkbox' ? checked : value,
     }));
   };
 
   // Function to calculate a single line item's values
-  const calculateLineItem = useCallback((item) => {
+  const calculateLineItem = useCallback((item, globalMarkup = null) => {
     const cost = parseFloat(item.cost) || 0;
-    const markupPercentage = parseFloat(item.markupPercentage) || 0;
+    // Use global markup if applyMarkupToAll is true and globalMarkup is provided, otherwise use item's markup
+    const markupPercentage = globalMarkup !== null ? parseFloat(globalMarkup) : parseFloat(item.markupPercentage) || 0;
     const salesTaxPercentage = parseFloat(item.salesTaxPercentage) || 0;
 
     const calculatedMarkup = cost * (markupPercentage / 100);
@@ -73,12 +68,25 @@ const App = () => {
       );
       // Recalculate the specific item immediately after its value changes
       return updatedItems.map((item) =>
-        item.id === id ? calculateLineItem(item) : item
+        item.id === id ? calculateLineItem(item, invoiceDetails.applyMarkupToAll ? invoiceDetails.globalMarkupPercentage : null) : item
       );
     });
-  }, [calculateLineItem]);
+  }, [calculateLineItem, invoiceDetails.applyMarkupToAll, invoiceDetails.globalMarkupPercentage]);
 
-  // Effect to recalculate all totals whenever line items change
+  // Handler for global markup percentage change
+  const handleGlobalMarkupChange = (e) => {
+    const { value } = e.target;
+    setInvoiceDetails((prevDetails) => ({
+      ...prevDetails,
+      globalMarkupPercentage: value,
+    }));
+    // Recalculate all line items when global markup changes
+    setLineItems((prevItems) =>
+      prevItems.map((item) => calculateLineItem(item, value))
+    );
+  };
+
+  // Effect to recalculate all totals whenever line items or global markup changes
   useEffect(() => {
     let subtotal = 0;
     let totalMarkup = 0;
@@ -98,7 +106,15 @@ const App = () => {
       totalSalesTax: parseFloat(totalSalesTax.toFixed(2)),
       grandTotal: parseFloat(grandTotal.toFixed(2)),
     });
-  }, [lineItems]);
+  }, [lineItems, invoiceDetails.globalMarkupPercentage, invoiceDetails.applyMarkupToAll]); // Recalculate when lineItems or global markup state changes
+
+  // Effect to re-calculate all line items when applyMarkupToAll toggles
+  useEffect(() => {
+    setLineItems((prevItems) =>
+      prevItems.map((item) => calculateLineItem(item, invoiceDetails.applyMarkupToAll ? invoiceDetails.globalMarkupPercentage : null))
+    );
+  }, [invoiceDetails.applyMarkupToAll, invoiceDetails.globalMarkupPercentage, calculateLineItem]);
+
 
   // Function to add a new line item
   const addLineItem = () => {
@@ -122,7 +138,7 @@ const App = () => {
     setLineItems((prevItems) => prevItems.filter((item) => item.id !== id));
   };
 
-  // UPDATED: Function to lookup CDTFA tax rate using Netlify Function
+  // Function to lookup CDTFA tax rate using Netlify Function
   const handleLookupTaxRate = async () => {
     const { deliveryStreet, deliveryCity, deliveryZip } = invoiceDetails;
 
@@ -160,123 +176,6 @@ const App = () => {
         cdtfaTaxRate: '', // Clear previous rate
         lookupMessage: 'Error fetching tax rate. Please try again later or enter manually.',
       }));
-    }
-  };
-
-  // Function to export current data to CSV (results)
-  const handleExportCsv = () => {
-    let csvContent = '';
-
-    csvContent += `"Invoice Number","${invoiceDetails.invoiceNumber}"\n`;
-    csvContent += `"Date","${invoiceDetails.invoiceDate}"\n`;
-    csvContent += `"Vendor Name","${invoiceDetails.vendorName}"\n`;
-    csvContent += `"Delivery Street","${invoiceDetails.deliveryStreet}"\n`;
-    csvContent += `"Delivery City","${invoiceDetails.deliveryCity}"\n`;
-    csvContent += `"Delivery Zip","${invoiceDetails.deliveryZip}"\n`;
-    csvContent += `"CDTFA Tax Rate (%)","${invoiceDetails.cdtfaTaxRate}"\n\n`;
-
-    csvContent += `"Description","Cost ($)","Markup (%)","Calculated Markup ($)","Sales Tax (%)","Calculated Sales Tax ($)","Line Total ($)"\n`;
-
-    lineItems.forEach(item => {
-      csvContent += `"${item.description}",`;
-      csvContent += `"${item.cost.toFixed(2)}",`;
-      csvContent += `"${item.markupPercentage.toFixed(2)}",`;
-      csvContent += `"${item.calculatedMarkup.toFixed(2)}",`;
-      csvContent += `"${item.salesTaxPercentage.toFixed(2)}",`;
-      csvContent += `"${item.calculatedSalesTax.toFixed(2)}",`;
-      csvContent += `"${item.lineTotal.toFixed(2)}"\n`;
-    });
-
-    csvContent += `\n"","","","","","Subtotal (Base Costs)","${totals.subtotal.toFixed(2)}"\n`;
-    csvContent += `\n"","","","","","Total Markup","${totals.totalMarkup.toFixed(2)}"\n`;
-    csvContent += `\n"","","","","","Total Sales Tax","${totals.totalSalesTax.toFixed(2)}"\n`;
-    csvContent += `\n"","","","","","Grand Total","${totals.grandTotal.toFixed(2)}"\n`;
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `invoice_results_${invoiceDetails.invoiceNumber || 'export'}_${invoiceDetails.invoiceDate}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } else {
-      alert("Your browser does not support downloading files directly. Please copy the content manually.");
-      console.log(csvContent);
-    }
-  };
-
-  // Function to generate CSV with Excel formulas (calculator template)
-  const generateExcelCalculatorCsv = () => {
-    let csvContent = '';
-
-    // Section 1: Invoice Details (Static Text and Placeholder for Input)
-    csvContent += `"Invoice Details"\n`;
-    csvContent += `"Invoice Number:","${invoiceDetails.invoiceNumber}"\n`;
-    csvContent += `"Date:","${invoiceDetails.invoiceDate}"\n`;
-    csvContent += `"Vendor Name:","${invoiceDetails.vendorName}"\n`;
-    csvContent += `"Delivery Street:","${invoiceDetails.deliveryStreet}"\n`;
-    csvContent += `"Delivery City:","${invoiceDetails.deliveryCity}"\n`;
-    csvContent += `"Delivery Zip:","${invoiceDetails.deliveryZip}"\n`;
-    csvContent += `"CDTFA Tax Rate (%):","${invoiceDetails.cdtfaTaxRate}"\n\n`;
-
-    // Section 2: Line Items (Headers and Formula Rows)
-    csvContent += `"","Description","Cost ($)","Markup (%)","Calculated Markup ($)","Sales Tax (%)","Calculated Sales Tax ($)","Line Total ($)"\n`;
-
-    // Start line items from row 10 in Excel (assuming 9 rows for invoice details and headers)
-    const startRow = 10;
-    const numRows = 10; // Provide a few rows for input by default
-
-    for (let i = 0; i < numRows; i++) {
-      const currentRow = startRow + i;
-      // Columns: B=Description, C=Cost, D=Markup%, E=CalcMarkup, F=SalesTax%, G=CalcSalesTax, H=LineTotal
-      const costCell = `C${currentRow}`;
-      const markupPercentCell = `D${currentRow}`;
-      const salesTaxPercentCell = `F${currentRow}`;
-      const calcMarkupCell = `E${currentRow}`;
-      const calcSalesTaxCell = `G${currentRow}`;
-
-      // Excel formulas - Removed string concatenations
-      const calculatedMarkupFormula = `=IF(${costCell}<>"",${costCell}*${markupPercentCell}/100,"")`;
-      const calculatedSalesTaxFormula = `=IF(${costCell}<>"",(${costCell}+${calcMarkupCell})*${salesTaxPercentCell}/100,"")`;
-      const lineTotalFormula = `=IF(${costCell}<>"",${costCell}+${calcMarkupCell}+${calcSalesTaxCell},"")`;
-
-      csvContent += `"",`; // Empty cell for potential row number or spacing
-      csvContent += `"",`; // Placeholder for Description input
-      csvContent += `"",`; // Placeholder for Cost input
-      csvContent += `"",`; // Placeholder for Markup % input
-      csvContent += `"${calculatedMarkupFormula}",`; // Calculated Markup
-      csvContent += `"",`; // Placeholder for Sales Tax % input
-      csvContent += `"${calculatedSalesTaxFormula}",`; // Calculated Sales Tax
-      csvContent += `"${lineTotalFormula}"\n`; // Line Total
-    }
-
-    // Section 3: Summary Totals (Formulas)
-    // Sum ranges for the default 10 rows (rows 10 to 19)
-    const endRow = startRow + numRows - 1;
-
-    // Removed string concatenations for summary totals as well
-    csvContent += `\n"","","","","","Subtotal (Base Costs):",` + `"=SUM(C${startRow}:C${endRow})"\n`;
-    csvContent += `\n"","","","","","Total Markup:",` + `"=SUM(E${startRow}:E${endRow})"\n`;
-    csvContent += `\n"","","","","","Total Sales Tax:",` + `"=SUM(G${startRow}:G${endRow})"\n`;
-    csvContent += `\n"","","","","","Grand Total:",` + `"=SUM(H${startRow}:H${endRow})"\n`;
-
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `invoice_calculator_template.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } else {
-      alert("Your browser does not support downloading files directly. Please copy the content manually.");
-      console.log(csvContent);
     }
   };
 
@@ -402,6 +301,36 @@ const App = () => {
                 <p className="text-sm mt-1 text-gray-600">{invoiceDetails.lookupMessage}</p>
               )}
             </div>
+            {/* New Markup Control */}
+            <div className="lg:col-span-3 flex items-center mt-4">
+              <input
+                type="checkbox"
+                id="applyMarkupToAll"
+                name="applyMarkupToAll"
+                checked={invoiceDetails.applyMarkupToAll}
+                onChange={handleInvoiceDetailsChange}
+                className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              />
+              <label htmlFor="applyMarkupToAll" className="ml-2 block text-sm font-medium text-gray-700">
+                Apply Markup Percentage to All Lines
+              </label>
+              {invoiceDetails.applyMarkupToAll && (
+                <div className="ml-4 flex-grow">
+                  <label htmlFor="globalMarkupPercentage" className="sr-only">Global Markup (%)</label>
+                  <input
+                    type="number"
+                    id="globalMarkupPercentage"
+                    name="globalMarkupPercentage"
+                    value={invoiceDetails.globalMarkupPercentage}
+                    onChange={handleGlobalMarkupChange}
+                    className="w-full p-2 border border-indigo-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition duration-200"
+                    placeholder="Global Markup (%)"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -451,11 +380,13 @@ const App = () => {
                     type="number"
                     id={`markupPercentage-${item.id}`}
                     name="markupPercentage"
-                    value={item.markupPercentage}
+                    value={invoiceDetails.applyMarkupToAll ? invoiceDetails.globalMarkupPercentage : item.markupPercentage}
                     onChange={(e) => handleLineItemChange(item.id, e)}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-400 focus:border-transparent transition duration-200"
+                    placeholder="0"
                     min="0"
                     step="0.01"
+                    disabled={invoiceDetails.applyMarkupToAll} // Disable if global markup is applied
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     Markup: ${item.calculatedMarkup.toFixed(2)}
@@ -555,18 +486,6 @@ const App = () => {
 
         {/* Action Buttons (Optional: Print/Save) */}
         <div className="flex justify-end mt-8 space-x-4">
-          <button
-            onClick={generateExcelCalculatorCsv} // New button for Excel calculator template
-            className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200"
-          >
-            Download Excel Calculator
-          </button>
-          <button
-            onClick={handleExportCsv}
-            className="px-6 py-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200"
-          >
-            Export Current Data to CSV
-          </button>
           <button
             onClick={() => window.print()}
             className="px-6 py-3 bg-gray-200 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200"

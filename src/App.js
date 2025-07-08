@@ -30,6 +30,14 @@ const App = () => {
     },
   ]);
 
+  // State for summary totals
+  const [totals, setTotals] = useState({
+    subtotal: 0,
+    totalMarkup: 0,
+    totalSalesTax: 0,
+    grandTotal: 0,
+  });
+
   // Function to handle changes in general invoice details
   const handleInvoiceDetailsChange = (e) => {
     const { name, type, checked, value } = e.target;
@@ -106,7 +114,7 @@ const App = () => {
       totalSalesTax: parseFloat(totalSalesTax.toFixed(2)),
       grandTotal: parseFloat(grandTotal.toFixed(2)),
     });
-  }, [lineItems, invoiceDetails.globalMarkupPercentage, invoiceDetails.applyMarkupToAll]); // Recalculate when lineItems or global markup state changes
+  }, [lineItems, invoiceDetails.globalMarkupPercentage, invoiceDetails.applyMarkupToAll, setTotals]);
 
   // Effect to re-calculate all line items when applyMarkupToAll toggles
   useEffect(() => {
